@@ -7,6 +7,7 @@ import os
 import json
 import time
 import uuid
+import re
 from . import models, database, services
 from pydantic import BaseModel
 
@@ -262,10 +263,20 @@ async def evaluate_contractor(
         try:
             eval_text = services.evaluate_criteria(rag_store_name, prompt)
             
-            # Simple parsing of score (assuming the model follows instruction)
-            # In a real app, we might ask for JSON output from Gemini for easier parsing
+            # Parse score and explanation
             score = 0
             comment = eval_text
+            
+            match = re.search(r"SCORE:\s*(\d+)", eval_text)
+            if match:
+                score = int(match.group(1))
+            
+            explanation_match = re.search(r"EXPLANATION:\s*(.*)", eval_text, re.DOTALL)
+            if explanation_match:
+                comment = explanation_match.group(1).strip()
+            else:
+                # Fallback if format isn't perfect, try to strip SCORE line
+                comment = re.sub(r"SCORE:\s*\d+\s*", "", eval_text).strip()
             
             # Save to DB
             db_result = models.EvaluationResult(

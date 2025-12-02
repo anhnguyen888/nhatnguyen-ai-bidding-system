@@ -101,7 +101,7 @@ def evaluate_criteria(store_name: str, criteria_prompt: str) -> str:
     
     response = client.models.generate_content(
         model="gemini-flash-latest",
-        contents=criteria_prompt + " ALWAYS ANSWER IN VIETNAMESE. Return the score (0-10) and a brief explanation.",
+        contents=criteria_prompt + " ALWAYS ANSWER IN VIETNAMESE. Format your response exactly like this:\nSCORE: <number from 0 to 10>\nEXPLANATION: <brief explanation>",
         config=types.GenerateContentConfig(
             tools=[types.Tool(file_search=types.FileSearch(file_search_store_names=[store_name]))]
         )

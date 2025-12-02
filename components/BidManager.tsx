@@ -668,26 +668,62 @@ const BidManager: React.FC = () => {
                 <h3 className="text-lg font-bold">Lịch sử</h3>
                 <button
                   onClick={() => {
-                    const csvContent =
-                      "data:text/csv;charset=utf-8," +
-                      "Contractor,Criteria,Score,Comment\n" +
-                      historyResults
-                        .map(
-                          (r) =>
-                            `"${selectedContractor.name}","${
-                              r.criteria_prompt
-                            }",${r.score},"${r.comment.replace(/"/g, '""')}"`
-                        )
-                        .join("\n");
-                    const encodedUri = encodeURI(csvContent);
+                    const cleanMarkdown = (text: string) => {
+                      return text
+                        .replace(/SCORE:?\s*\d+/gi, '')
+                        .replace(/EXPLANATION:?/gi, '')
+                        .replace(/[*#_`]/g, '')
+                        .trim();
+                    };
+
+                    // Create HTML table for Excel
+                    const tableContent = `
+                      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+                      <head>
+                        <meta charset="utf-8" />
+                        <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Evaluation Results</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+                        <style>
+                          td { vertical-align: top; padding: 5px; }
+                          .wrap-text { white-space: pre-wrap; word-wrap: break-word; }
+                        </style>
+                      </head>
+                      <body>
+                        <table border="1">
+                          <thead>
+                            <tr style="background-color: #f0f0f0; font-weight: bold;">
+                              <th style="width: 150px;">Contractor</th>
+                              <th style="width: 200px;">Criteria</th>
+                              <th style="width: 80px;">Score</th>
+                              <th style="width: 400px;">Explanation</th>
+                              <th style="width: 100px;">Conclusion</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${historyResults.map(r => `
+                              <tr>
+                                <td>${selectedContractor.name}</td>
+                                <td>${r.criteria_prompt}</td>
+                                <td style="text-align: center;">${r.score}</td>
+                                <td class="wrap-text">${cleanMarkdown(r.comment)}</td>
+                                <td style="text-align: center; color: ${r.score >= 5 ? 'green' : 'red'}; font-weight: bold;">
+                                  ${r.score >= 5 ? 'Đạt' : 'Không đạt'}
+                                </td>
+                              </tr>
+                            `).join('')}
+                          </tbody>
+                        </table>
+                      </body>
+                      </html>
+                    `;
+
+                    const blob = new Blob([tableContent], { type: 'application/vnd.ms-excel' });
+                    const url = URL.createObjectURL(blob);
                     const link = document.createElement("a");
-                    link.setAttribute("href", encodedUri);
-                    link.setAttribute(
-                      "download",
-                      `evaluation_${selectedContractor.name}.csv`
-                    );
+                    link.href = url;
+                    link.download = `evaluation_${selectedContractor.name}.xls`;
                     document.body.appendChild(link);
                     link.click();
+                    document.body.removeChild(link);
                   }}
                   className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
                 >
