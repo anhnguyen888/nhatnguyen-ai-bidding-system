@@ -64,20 +64,7 @@ export const api = {
         return res.json();
     },
 
-    async updateBidPackage(id: number, name: string, description?: string): Promise<BidPackage> {
-        const res = await fetch(`${API_URL}/bid_packages/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, description })
-        });
-        return res.json();
-    },
 
-    async deleteBidPackage(id: number): Promise<void> {
-        await fetch(`${API_URL}/bid_packages/${id}`, {
-            method: 'DELETE'
-        });
-    },
 
     async getContractors(bidPackageId: number): Promise<Contractor[]> {
         const res = await fetch(`${API_URL}/bid_packages/${bidPackageId}/contractors`);
@@ -108,13 +95,28 @@ export const api = {
         });
     },
 
-    async evaluateContractor(contractorId: number, prompts: string[], files: File[]): Promise<{ status: string, results: any[] }> {
+    async processContractorFiles(contractorId: number, files: File[]): Promise<{ status: string, message: string }> {
         const formData = new FormData();
-        formData.append('contractor_id', contractorId.toString());
-        formData.append('prompts', JSON.stringify(prompts));
         for (let i = 0; i < files.length; i++) {
             formData.append('files', files[i]);
         }
+
+        const res = await fetch(`${API_URL}/contractors/${contractorId}/process-files`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Xử lý tệp thất bại');
+        }
+        return res.json();
+    },
+
+    async evaluateContractor(contractorId: number, prompts: string[]): Promise<{ status: string, results: any[] }> {
+        const formData = new FormData();
+        formData.append('contractor_id', contractorId.toString());
+        formData.append('prompts', JSON.stringify(prompts));
 
         const res = await fetch(`${API_URL}/evaluate/`, {
             method: 'POST',

@@ -52,6 +52,9 @@ const BidManager: React.FC = () => {
         selectedContractor, setSelectedContractor 
     } = useNavigation();
 
+  // Evaluation step state: 'files' | 'prompts'
+  const [evalStep, setEvalStep] = useState<'files' | 'prompts'>('files');
+
   const [packages, setPackages] = useState<BidPackage[]>([]);
   const [contractors, setContractors] = useState<Contractor[]>([]);
   const [loading, setLoading] = useState(false);
@@ -165,6 +168,7 @@ const BidManager: React.FC = () => {
   const handleSelectContractor = async (contractor: Contractor) => {
     setSelectedContractor(contractor);
     setView("evaluate");
+    setEvalStep("files"); // Reset to files step
     loadHistory(contractor.id);
     loadFiles(contractor.id);
   };
@@ -179,24 +183,33 @@ const BidManager: React.FC = () => {
     setProcessedFiles(res);
   };
 
+  const handleProcessFiles = async () => {
+    if (!selectedContractor || files.length === 0) return;
+    setLoading(true);
+    try {
+        await api.processContractorFiles(selectedContractor.id, files);
+        setFiles([]); // Clear selected files
+        await loadFiles(selectedContractor.id); // Reload processed files
+        setEvalStep("prompts"); // Move to prompts step
+    } catch (e) {
+        alert("Xử lý tệp thất bại: " + e);
+    } finally {
+        setLoading(false);
+    }
+  };
+
   const handleEvaluate = async () => {
-    if (
-      !selectedContractor ||
-      (files.length === 0 && !selectedContractor.gemini_store_name)
-    )
-      return;
+    if (!selectedContractor) return;
     setLoading(true);
     setEvalResults([]);
     try {
       const promptList = prompts.split("\n").filter((p) => p.trim());
       const res = await api.evaluateContractor(
         selectedContractor.id,
-        promptList,
-        files
+        promptList
       );
       setEvalResults(res.results);
       loadHistory(selectedContractor.id);
-      loadFiles(selectedContractor.id);
     } catch (e) {
       alert("Đánh giá thất bại: " + e);
     } finally {
@@ -497,87 +510,139 @@ const BidManager: React.FC = () => {
             </div>
           )}
 
-          <div className="mb-6 space-y-4">
-            <div>
-              <label className="block mb-2">Tải lên Hồ sơ đề xuất (PDF)</label>
-              <div className="relative group">
-                <input
-                  type="file"
-                  multiple
-                  id="file-upload"
-                  onChange={(e) => {
-                    if (e.target.files) {
-                        setFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
-                    }
-                  }}
-                  className="hidden"
-                />
-                <label 
-                    htmlFor="file-upload"
-                    className="flex flex-col items-center justify-center w-full h-32 border-2 border-gem-blue border-dashed rounded-lg cursor-pointer bg-blue-50 hover:bg-blue-100 transition-colors"
+          <div className="mb-6">
+            {/* Step Indicator */}
+            <div className="flex items-center gap-4 mb-6 border-b border-gray-200 pb-4">
+                <button 
+                    onClick={() => setEvalStep('files')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${evalStep === 'files' ? 'bg-gem-blue text-white' : 'text-gray-500 hover:bg-gray-100'}`}
                 >
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <svg className="w-8 h-8 mb-4 text-gem-blue" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
-                            <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
-                        </svg>
-                        <p className="mb-2 text-sm text-gray-700"><span className="font-semibold text-gem-blue">Nhấn để tải lên</span> hoặc kéo thả vào đây</p>
-                        <p className="text-xs text-gray-500">PDF (Tối đa 10MB)</p>
-                    </div>
-                </label>
-              </div>
+                    1. Tải lên & Xử lý tệp
+                </button>
+                <div className="h-px w-8 bg-gray-300"></div>
+                <button 
+                    onClick={() => {
+                        if (selectedContractor.gemini_store_name) setEvalStep('prompts');
+                        else alert("Vui lòng xử lý tệp trước khi đánh giá.");
+                    }}
+                    disabled={!selectedContractor.gemini_store_name}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${evalStep === 'prompts' ? 'bg-gem-blue text-white' : 'text-gray-500 hover:bg-gray-100 disabled:opacity-50'}`}
+                >
+                    2. Đánh giá AI
+                </button>
+            </div>
 
-              
-              {files.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  <p className="text-sm font-semibold text-gray-700">Tệp đã chọn:</p>
-                  <div className="grid grid-cols-1 gap-2">
-                    {files.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded border border-gray-200">
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H8z" clipRule="evenodd" />
-                          </svg>
-                          <span className="text-sm text-gray-700 truncate">{file.name}</span>
-                          <span className="text-xs text-gray-400 flex-shrink-0">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
-                        </div>
-                        <button
-                          onClick={() => setFiles(files.filter((_, i) => i !== index))}
-                          className="text-gray-400 hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors"
-                          title="Xóa tệp"
+            {evalStep === 'files' && (
+                <div className="space-y-6">
+                    <div>
+                    <label className="block mb-2 font-semibold text-gray-700">Tải lên Hồ sơ đề xuất (PDF)</label>
+                    <div className="relative group">
+                        <input
+                        type="file"
+                        multiple
+                        id="file-upload"
+                        onChange={(e) => {
+                            if (e.target.files) {
+                                setFiles(prev => [...prev, ...Array.from(e.target.files || [])]);
+                            }
+                        }}
+                        className="hidden"
+                        />
+                        <label 
+                            htmlFor="file-upload"
+                            className="flex flex-col items-center justify-center w-full h-32 border-2 border-gem-blue border-dashed rounded-lg cursor-pointer bg-blue-50 hover:bg-blue-100 transition-colors"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                <svg className="w-8 h-8 mb-4 text-gem-blue" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                                </svg>
+                                <p className="mb-2 text-sm text-gray-700"><span className="font-semibold text-gem-blue">Nhấn để tải lên</span> hoặc kéo thả vào đây</p>
+                                <p className="text-xs text-gray-500">PDF (Tối đa 10MB)</p>
+                            </div>
+                        </label>
+                    </div>
+                    
+                    {files.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                        <p className="text-sm font-semibold text-gray-700">Tệp đã chọn:</p>
+                        <div className="grid grid-cols-1 gap-2">
+                            {files.map((file, index) => (
+                            <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded border border-gray-200">
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H8z" clipRule="evenodd" />
+                                </svg>
+                                <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                                <span className="text-xs text-gray-400 flex-shrink-0">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                                </div>
+                                <button
+                                onClick={() => setFiles(files.filter((_, i) => i !== index))}
+                                className="text-gray-400 hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors"
+                                title="Xóa tệp"
+                                >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                                </button>
+                            </div>
+                            ))}
+                        </div>
+                        </div>
+                    )}
+                    </div>
+
+                    <button
+                        onClick={handleProcessFiles}
+                        disabled={files.length === 0}
+                        className="bg-gem-blue text-white px-6 py-3 rounded-lg w-full font-bold shadow-md hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Lưu vào RAG & Tiếp tục
+                    </button>
+                    
+                    {selectedContractor.gemini_store_name && (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <div>
+                                <p className="text-green-800 font-medium">Dữ liệu RAG đã sẵn sàng</p>
+                                <p className="text-green-600 text-sm">Bạn có thể chuyển sang bước Đánh giá AI ngay bây giờ.</p>
+                            </div>
+                            <button 
+                                onClick={() => setEvalStep('prompts')}
+                                className="ml-auto text-green-700 hover:text-green-900 font-medium text-sm underline"
+                            >
+                                Đi tới Đánh giá &rarr;
+                            </button>
+                        </div>
+                    )}
                 </div>
-              )}
-            </div>
-            <div>
-              <label className="block mb-2">
-                Tiêu chí đánh giá (Mỗi dòng một tiêu chí)
-              </label>
-              <textarea
-                className="w-full h-32 bg-white text-black p-2 rounded border border-gem-mist"
-                value={prompts}
-                onChange={(e) => setPrompts(e.target.value)}
-              />
-            </div>
-            <button
-              onClick={handleEvaluate}
-              disabled={
-                files.length === 0 && !selectedContractor.gemini_store_name
-              }
-              className="bg-gem-blue text-white px-6 py-3 rounded w-full disabled:opacity-50"
-            >
-              Chạy đánh giá
-            </button>
-            {selectedContractor.gemini_store_name && (
-              <p className="text-green-400 text-sm text-center mt-2">
-                ✓ Lưu trữ vĩnh viễn đang hoạt động (Tệp được tái sử dụng)
-              </p>
+            )}
+
+            {evalStep === 'prompts' && (
+                <div className="space-y-6">
+                    <div>
+                    <label className="block mb-2 font-semibold text-gray-700">Tiêu chí đánh giá (Mỗi dòng một tiêu chí)</label>
+                    <textarea
+                        className="w-full h-48 bg-white text-gray-800 p-4 rounded-lg border border-gray-300 focus:ring-2 focus:ring-gem-blue focus:border-transparent shadow-sm"
+                        value={prompts}
+                        onChange={(e) => setPrompts(e.target.value)}
+                        placeholder="Nhập các câu hỏi hoặc tiêu chí đánh giá..."
+                    />
+                    </div>
+                    <button
+                    onClick={handleEvaluate}
+                    className="bg-gem-blue text-white px-6 py-3 rounded-lg w-full font-bold shadow-md hover:bg-blue-600 transition-all flex items-center justify-center gap-2"
+                    >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                    </svg>
+                    Chạy đánh giá AI
+                    </button>
+                </div>
             )}
           </div>
 
@@ -586,9 +651,11 @@ const BidManager: React.FC = () => {
               <h3 className="text-lg font-bold mb-4">Kết quả hiện tại</h3>
               <div className="space-y-4">
                 {evalResults.map((res, idx) => (
-                  <div key={idx} className="bg-gem-light/10 p-4 rounded">
-                    <p className="font-bold text-gem-mist mb-2">{res.prompt}</p>
-                    <p>{res.result || res.error}</p>
+                  <div key={idx} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="font-bold text-gem-blue mb-3 text-lg border-b border-gray-100 pb-2">{res.prompt}</p>
+                    <div className="text-gray-700">
+                        <MarkdownRenderer content={res.result || res.error} />
+                    </div>
                   </div>
                 ))}
               </div>

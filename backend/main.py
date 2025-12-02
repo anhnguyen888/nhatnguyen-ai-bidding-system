@@ -138,14 +138,13 @@ async def upload_file(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
     return {"filename": file.filename, "path": file_path}
 
-@app.post("/evaluate/")
-async def evaluate_contractor(
-    contractor_id: int = Form(...),
-    prompts: str = Form(...), # Expecting JSON string for list of prompts
-    files: List[UploadFile] = File(None),
+@app.post("/contractors/{contractor_id}/process-files")
+async def process_contractor_files(
+    contractor_id: int,
+    files: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
-    # Fetch contractor to check for existing store
+    # Fetch contractor
     contractor = db.query(models.Contractor).filter(models.Contractor.id == contractor_id).first()
     if not contractor:
         raise HTTPException(status_code=404, detail="Không tìm thấy nhà thầu")
@@ -156,46 +155,46 @@ async def evaluate_contractor(
     
     uploaded_file_records = [] # List of (db_file, gemini_file)
     
-    if files:
-        for file in files:
-            # Use UUID for safe local filename
-            file_extension = os.path.splitext(file.filename)[1]
-            safe_filename = f"{uuid.uuid4()}{file_extension}"
-            file_path = os.path.join(upload_dir, safe_filename)
+    for file in files:
+        # Use UUID for safe local filename
+        file_extension = os.path.splitext(file.filename)[1]
+        safe_filename = f"{uuid.uuid4()}{file_extension}"
+        file_path = os.path.join(upload_dir, safe_filename)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Create DB record
+        db_file = models.ContractorFile(
+            contractor_id=contractor_id,
+            filename=file.filename,
+            file_path=file_path,
+            is_stored_in_gemini=False
+        )
+        db.add(db_file)
+        db.commit()
+        db.refresh(db_file)
+
+        # Upload to Gemini
+        try:
+            g_file = services.upload_file(file_path, mime_type=file.content_type, display_name=file.filename)
             
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-
-            # Create DB record
-            db_file = models.ContractorFile(
-                contractor_id=contractor_id,
-                filename=file.filename,
-                file_path=file_path,
-                is_stored_in_gemini=False
-            )
-            db.add(db_file)
+            # Update DB record
+            db_file.gemini_file_name = g_file.name
+            db_file.gemini_file_uri = g_file.uri
             db.commit()
-            db.refresh(db_file)
-
-            # Upload to Gemini
-            try:
-                g_file = services.upload_file(file_path, mime_type=file.content_type, display_name=file.filename)
-                
-                # Update DB record
-                db_file.gemini_file_name = g_file.name
-                db_file.gemini_file_uri = g_file.uri
-                db.commit()
-                
-                uploaded_file_records.append((db_file, g_file))
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Tải lên Gemini thất bại cho {file.filename}: {str(e)}")
+            
+            uploaded_file_records.append((db_file, g_file))
+        except Exception as e:
+            # If one fails, we continue but log/warn? For now, fail hard to ensure integrity
+            raise HTTPException(status_code=500, detail=f"Tải lên Gemini thất bại cho {file.filename}: {str(e)}")
 
     # 2. Manage RAG Store
     rag_store_name = contractor.gemini_store_name
     gemini_files_to_add = [g for _, g in uploaded_file_records]
     
     if rag_store_name:
-        # Store exists, add new files if any
+        # Store exists, add new files
         if gemini_files_to_add:
             try:
                 for g_file in gemini_files_to_add:
@@ -211,27 +210,43 @@ async def evaluate_contractor(
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Không thể thêm tệp vào kho hiện có: {str(e)}")
     else:
-        # No store exists
-        if not gemini_files_to_add:
-             raise HTTPException(status_code=400, detail="Không có tệp nào được cung cấp và không tìm thấy kho hiện có cho nhà thầu này.")
-        
-        # Create new store with files
-        store_display_name = f"evaluation_{contractor_id}_{int(time.time())}"
-        try:
-            rag_store_name = services.create_store_with_files(store_display_name, [f.name for f in gemini_files_to_add])
-            
-            # Update contractor with store name
-            contractor.gemini_store_name = rag_store_name
-            
-            # Update status
-            for db_file, _ in uploaded_file_records:
-                db_file.is_stored_in_gemini = True
-            db.commit()
-            
-            # Wait for indexing
-            time.sleep(5)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Tạo kho RAG thất bại: {str(e)}")
+        # No store exists, create new one
+        if gemini_files_to_add:
+            store_display_name = f"evaluation_{contractor_id}_{int(time.time())}"
+            try:
+                rag_store_name = services.create_store_with_files(store_display_name, [f.name for f in gemini_files_to_add])
+                
+                # Update contractor with store name
+                contractor.gemini_store_name = rag_store_name
+                
+                # Update status
+                for db_file, _ in uploaded_file_records:
+                    db_file.is_stored_in_gemini = True
+                db.commit()
+                
+                # Wait for indexing
+                time.sleep(5)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Tạo kho RAG thất bại: {str(e)}")
+        else:
+             raise HTTPException(status_code=400, detail="Không có tệp nào để xử lý.")
+
+    return {"status": "success", "message": f"Đã xử lý {len(files)} tệp và cập nhật RAG store"}
+
+@app.post("/evaluate/")
+async def evaluate_contractor(
+    contractor_id: int = Form(...),
+    prompts: str = Form(...), # Expecting JSON string for list of prompts
+    db: Session = Depends(get_db)
+):
+    # Fetch contractor to check for existing store
+    contractor = db.query(models.Contractor).filter(models.Contractor.id == contractor_id).first()
+    if not contractor:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhà thầu")
+    
+    rag_store_name = contractor.gemini_store_name
+    if not rag_store_name:
+        raise HTTPException(status_code=400, detail="Nhà thầu chưa có dữ liệu RAG. Vui lòng tải lên và xử lý tệp trước.")
 
     # 3. Evaluate each prompt
     results = []
@@ -248,6 +263,7 @@ async def evaluate_contractor(
             eval_text = services.evaluate_criteria(rag_store_name, prompt)
             
             # Simple parsing of score (assuming the model follows instruction)
+            # In a real app, we might ask for JSON output from Gemini for easier parsing
             score = 0
             comment = eval_text
             
