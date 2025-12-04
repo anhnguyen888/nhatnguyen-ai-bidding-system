@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status
+from datetime import timedelta
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -8,8 +9,9 @@ import json
 import time
 import uuid
 import re
-from . import models, database, services
+from . import models, database, services, auth
 from pydantic import BaseModel
+from fastapi.security import OAuth2PasswordRequestForm
 
 models.Base.metadata.create_all(bind=database.engine)
 
@@ -44,7 +46,118 @@ class CriteriaSetCreate(BaseModel):
     name: str
     prompts: List[str]
 
+class UserCreate(BaseModel):
+    username: str
+    full_name: Optional[str] = None
+    password: str
+    role: str = "user"
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+    role: Optional[str] = None
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    full_name: Optional[str] = None
+    is_active: bool
+    role: str
+
+    class Config:
+        orm_mode = True
+
+class PasswordChange(BaseModel):
+    old_password: str
+    new_password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
 # Routes
+
+@app.on_event("startup")
+def startup_event():
+    db = database.SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.username == "admin").first()
+        if not user:
+            hashed_password = auth.get_password_hash("admin123")
+            db_user = models.User(username="admin", hashed_password=hashed_password, role="admin")
+            db.add(db_user)
+            db.commit()
+            print("Admin user created")
+    finally:
+        db.close()
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.username == form_data.username).first()
+    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = auth.create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/users/", response_model=UserResponse)
+def create_user(user: UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+    db_user = db.query(models.User).filter(models.User.username == user.username).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    hashed_password = auth.get_password_hash(user.password)
+    db_user = models.User(username=user.username, full_name=user.full_name, hashed_password=hashed_password, role=user.role)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@app.get("/users/", response_model=List[UserResponse])
+def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+    users = db.query(models.User).offset(skip).limit(limit).all()
+    return users
+
+@app.put("/users/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.password:
+        db_user.hashed_password = auth.get_password_hash(user.password)
+    if user.full_name is not None:
+        db_user.full_name = user.full_name
+    if user.is_active is not None:
+        db_user.is_active = user.is_active
+    if user.role:
+        db_user.role = user.role
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@app.post("/users/me/password")
+async def change_password(password_data: PasswordChange, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_active_user)):
+    if not auth.verify_password(password_data.old_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Mật khẩu cũ không chính xác")
+    
+    current_user.hashed_password = auth.get_password_hash(password_data.new_password)
+    db.commit()
+    return {"status": "success", "message": "Đổi mật khẩu thành công"}
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_admin_user)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(db_user)
+    db.commit()
+    return {"status": "success", "message": "User deleted"}
 
 @app.post("/bid_packages/")
 def create_bid_package(bid: BidPackageCreate, db: Session = Depends(get_db)):

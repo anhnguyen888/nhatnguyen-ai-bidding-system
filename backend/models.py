@@ -59,3 +59,13 @@ class EvaluationResult(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     contractor = relationship("Contractor", back_populates="evaluation_results")
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    full_name = Column(String, nullable=True)
+    hashed_password = Column(String)
+    is_active = Column(Boolean, default=True)
+    role = Column(String, default="user") # admin, user

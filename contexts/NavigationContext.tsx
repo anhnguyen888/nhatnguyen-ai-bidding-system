@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { BidPackage, Contractor } from '../services/api';
 
-type ViewType = 'packages' | 'contractors' | 'evaluate' | 'settings' | 'reports';
+type ViewType = 'packages' | 'contractors' | 'evaluate' | 'settings' | 'reports' | 'users' | 'change-password';
 
 interface NavigationContextType {
     view: ViewType;
