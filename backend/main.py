@@ -270,14 +270,13 @@ async def process_contractor_files(
     uploaded_file_records = [] # List of (db_file, gemini_file)
     
     for file in files:
-        # Use UUID for safe local filename
+        # Use placeholder for local path since we are not saving locally
+        # We still generate a safe filename for the display_name or potential future use
         file_extension = os.path.splitext(file.filename)[1]
         safe_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = os.path.join(upload_dir, safe_filename)
+        # Use a special scheme to indicate it's not on disk
+        file_path = f"memory://{safe_filename}"
         
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
         # Create DB record
         db_file = models.ContractorFile(
             contractor_id=contractor_id,
@@ -291,7 +290,8 @@ async def process_contractor_files(
 
         # Upload to Gemini
         try:
-            g_file = services.upload_file(file_path, mime_type=file.content_type, display_name=file.filename)
+            # Pass the file-like object directly
+            g_file = services.upload_file(file.file, mime_type=file.content_type, display_name=file.filename)
             
             # Update DB record
             db_file.gemini_file_name = g_file.name

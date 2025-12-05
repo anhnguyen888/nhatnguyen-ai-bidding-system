@@ -19,12 +19,18 @@ def create_rag_store(display_name: str) -> str:
     store = client.file_search_stores.create(config={"display_name": display_name})
     return store.name
 
-def upload_file(file_path: str, mime_type: str = None, display_name: str = None):
-    """Uploads a file to Gemini."""
+def upload_file(file: str | object, mime_type: str = None, display_name: str = None):
+    """Uploads a file to Gemini.
+    
+    Args:
+        file: Path to the file (str) or a file-like object (IO).
+    """
     config = {"mime_type": mime_type}
     if display_name:
         config["display_name"] = display_name
-    file = client.files.upload(file=file_path, config=config)
+        
+    # client.files.upload handles both path strings and file-like objects
+    file = client.files.upload(file=file, config=config)
     
     # Wait for processing
     while file.state.name == "PROCESSING":
