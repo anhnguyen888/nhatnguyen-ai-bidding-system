@@ -32,6 +32,7 @@ class ContractorFile(Base):
     contractor_id = Column(Integer, ForeignKey("contractors.id"))
     filename = Column(String)
     file_path = Column(String)
+    file_size = Column(Integer, default=0) # Size in bytes
     gemini_file_name = Column(String, nullable=True)
     gemini_file_uri = Column(String, nullable=True)
     is_stored_in_gemini = Column(Boolean, default=False)
@@ -56,6 +57,8 @@ class EvaluationResult(Base):
     score = Column(Integer)
     comment = Column(Text)
     evidence = Column(Text)
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     contractor = relationship("Contractor", back_populates="evaluation_results")

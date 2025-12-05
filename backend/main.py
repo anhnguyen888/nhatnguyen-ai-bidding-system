@@ -282,6 +282,7 @@ async def process_contractor_files(
             contractor_id=contractor_id,
             filename=file.filename,
             file_path=file_path,
+            file_size=file.size, # Save file size
             is_stored_in_gemini=False
         )
         db.add(db_file)
@@ -374,7 +375,8 @@ async def evaluate_contractor(
 
     for prompt in prompt_list:
         try:
-            eval_text = services.evaluate_criteria(rag_store_name, prompt)
+            eval_result = services.evaluate_criteria(rag_store_name, prompt)
+            eval_text = eval_result["text"]
             
             # Parse score and explanation
             score = 0
@@ -397,7 +399,9 @@ async def evaluate_contractor(
                 criteria_prompt=prompt,
                 score=score, # Placeholder
                 comment=comment,
-                evidence=""
+                evidence="",
+                input_tokens=eval_result["input_tokens"],
+                output_tokens=eval_result["output_tokens"]
             )
             db.add(db_result)
             results.append({"prompt": prompt, "result": eval_text})
@@ -406,6 +410,49 @@ async def evaluate_contractor(
 
     db.commit()
     return {"status": "Đánh giá hoàn tất", "results": results}
+
+@app.get("/reports/stats")
+def get_stats(db: Session = Depends(get_db)):
+    total_packages = db.query(models.BidPackage).count()
+    total_contractors = db.query(models.Contractor).count()
+    total_evaluations = db.query(models.EvaluationResult).count()
+    
+    # File stats
+    files = db.query(models.ContractorFile).all()
+    total_files = len(files)
+    total_size_bytes = sum(f.file_size for f in files if f.file_size)
+    total_size_mb = total_size_bytes / (1024 * 1024)
+    
+    # Token stats
+    evals = db.query(models.EvaluationResult).all()
+    total_input_tokens = sum(e.input_tokens for e in evals if e.input_tokens)
+    total_output_tokens = sum(e.output_tokens for e in evals if e.output_tokens)
+    
+    # Cost estimation (Gemini 1.5 Flash rates)
+    # Input: $0.075 / 1M tokens (for < 128k context, assuming short context for now)
+    # Output: $0.30 / 1M tokens
+    # Storage: Free up to 2GB? Actually File Search has costs.
+    # Let's use generic rates:
+    # Input: $0.075 per 1M
+    # Output: $0.30 per 1M
+    # Storage: $0.10 per GB/month (approx)
+    
+    cost_input = (total_input_tokens / 1_000_000) * 0.075
+    cost_output = (total_output_tokens / 1_000_000) * 0.30
+    cost_storage = (total_size_mb / 1024) * 0.10 # Very rough estimate per month
+    
+    total_cost = cost_input + cost_output + cost_storage
+    
+    return {
+        "total_packages": total_packages,
+        "total_contractors": total_contractors,
+        "total_evaluations": total_evaluations,
+        "total_files": total_files,
+        "total_storage_mb": round(total_size_mb, 2),
+        "total_input_tokens": total_input_tokens,
+        "total_output_tokens": total_output_tokens,
+        "estimated_cost_usd": round(total_cost, 4)
+    }
 
 @app.get("/contractors/{contractor_id}/files")
 def list_contractor_files(contractor_id: int, db: Session = Depends(get_db)):

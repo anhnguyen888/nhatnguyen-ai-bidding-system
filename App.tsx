@@ -5,6 +5,7 @@ import MainLayout from './components/Layout/MainLayout';
 import Login from './components/Login';
 import UserManagement from './components/UserManagement';
 import ChangePassword from './components/ChangePassword';
+import Reports from './components/Reports'; // Added import for Reports
 import { NavigationProvider, useNavigation } from './contexts/NavigationContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -28,10 +29,7 @@ const AppContent: React.FC = () => {
                     <p className="text-gray-500 mt-2">Tính năng đang được phát triển...</p>
                 </div>
             ) : view === 'reports' ? (
-                <div className="text-center py-20">
-                    <h2 className="text-2xl font-bold text-gray-400">Báo cáo</h2>
-                    <p className="text-gray-500 mt-2">Tính năng đang được phát triển...</p>
-                </div>
+                <Reports />
             ) : view === 'users' ? (
                 isAdmin ? <UserManagement /> : <div className="text-center py-20 text-red-500">Bạn không có quyền truy cập.</div>
             ) : view === 'change-password' ? (

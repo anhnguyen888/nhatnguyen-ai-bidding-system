@@ -102,7 +102,7 @@ def add_file_to_store(store_name: str, file_resource_name: str):
         print(f"Error adding file to store: {e}")
         raise e
 
-def evaluate_criteria(store_name: str, criteria_prompt: str) -> str:
+def evaluate_criteria(store_name: str, criteria_prompt: str) -> dict:
     """Evaluates a single criteria using the file search store."""
     
     response = client.models.generate_content(
@@ -113,7 +113,11 @@ def evaluate_criteria(store_name: str, criteria_prompt: str) -> str:
         )
     )
     
-    return response.text
+    return {
+        "text": response.text,
+        "input_tokens": response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
+        "output_tokens": response.usage_metadata.candidates_token_count if response.usage_metadata else 0
+    }
 
 def delete_store(store_name: str):
     """Deletes a file search store."""
