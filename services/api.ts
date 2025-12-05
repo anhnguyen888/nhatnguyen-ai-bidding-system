@@ -166,6 +166,13 @@ export const api = {
         return res.json();
     },
 
+    async deleteEvaluation(id: number): Promise<void> {
+        await fetch(`${API_URL}/evaluations/${id}`, {
+            method: 'DELETE',
+            headers: { ...getAuthHeaders() }
+        });
+    },
+
     async getContractorFiles(contractorId: number): Promise<ContractorFile[]> {
         const res = await fetch(`${API_URL}/contractors/${contractorId}/files`, {
             headers: { ...getAuthHeaders() }

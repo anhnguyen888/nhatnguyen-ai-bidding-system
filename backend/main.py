@@ -415,6 +415,15 @@ def list_contractor_files(contractor_id: int, db: Session = Depends(get_db)):
 def get_evaluations(contractor_id: int, db: Session = Depends(get_db)):
     return db.query(models.EvaluationResult).filter(models.EvaluationResult.contractor_id == contractor_id).all()
 
+@app.delete("/evaluations/{evaluation_id}")
+def delete_evaluation(evaluation_id: int, db: Session = Depends(get_db)):
+    db_eval = db.query(models.EvaluationResult).filter(models.EvaluationResult.id == evaluation_id).first()
+    if not db_eval:
+        raise HTTPException(status_code=404, detail="Không tìm thấy kết quả đánh giá")
+    db.delete(db_eval)
+    db.commit()
+    return {"status": "success", "message": "Đã xóa kết quả đánh giá"}
+
 @app.get("/")
 def read_root():
     return {"message": "API Backend Hệ thống Đấu thầu AI"}
