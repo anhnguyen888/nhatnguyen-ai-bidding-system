@@ -6,3 +6,4 @@ python-dotenv
 python-multipart
 passlib[bcrypt]
 python-jose[cryptography]
+psycopg2-binary

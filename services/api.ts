@@ -57,12 +57,25 @@ const getAuthHeaders = () => {
     return token ? { 'Authorization': `Bearer ${token}` } : {};
 };
 
+const handleResponse = async (res: Response) => {
+    if (res.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        throw new Error('Unauthorized');
+    }
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'API Error');
+    }
+    return res.json();
+};
+
 export const api = {
     async getBidPackages(): Promise<BidPackage[]> {
         const res = await fetch(`${API_URL}/bid_packages/`, {
             headers: { ...getAuthHeaders() }
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     async updateBidPackage(id: number, name: string, description?: string): Promise<BidPackage> {
@@ -71,14 +84,19 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ name, description })
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     async deleteBidPackage(id: number): Promise<void> {
-        await fetch(`${API_URL}/bid_packages/${id}`, {
+        const res = await fetch(`${API_URL}/bid_packages/${id}`, {
             method: 'DELETE',
             headers: { ...getAuthHeaders() }
         });
+        if (res.status === 401) return handleResponse(res);
+        if (!res.ok) {
+             const err = await res.json().catch(() => ({}));
+             throw new Error(err.detail || 'API Error');
+        }
     },
 
     async createBidPackage(name: string, description?: string): Promise<BidPackage> {
@@ -87,14 +105,14 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ name, description })
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     async getContractors(bidPackageId: number): Promise<Contractor[]> {
         const res = await fetch(`${API_URL}/bid_packages/${bidPackageId}/contractors`, {
             headers: { ...getAuthHeaders() }
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     async createContractor(name: string, bidPackageId: number): Promise<Contractor> {
@@ -103,7 +121,7 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ name, bid_package_id: bidPackageId })
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     async updateContractor(id: number, name: string): Promise<Contractor> {
@@ -112,14 +130,16 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ name, bid_package_id: 0 }) 
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     async deleteContractor(id: number): Promise<void> {
-        await fetch(`${API_URL}/contractors/${id}`, {
+        const res = await fetch(`${API_URL}/contractors/${id}`, {
             method: 'DELETE',
             headers: { ...getAuthHeaders() }
         });
+        if (res.status === 401) return handleResponse(res);
+        if (!res.ok) throw new Error('Failed to delete contractor');
     },
 
     async processContractorFiles(contractorId: number, files: File[]): Promise<{ status: string, message: string }> {
@@ -130,15 +150,10 @@ export const api = {
 
         const res = await fetch(`${API_URL}/contractors/${contractorId}/process-files`, {
             method: 'POST',
-            headers: { ...getAuthHeaders() }, // Note: Content-Type is auto-set for FormData
+            headers: { ...getAuthHeaders() }, 
             body: formData
         });
-
-        if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.detail || 'Xử lý tệp thất bại');
-        }
-        return res.json();
+        return handleResponse(res);
     },
 
     async evaluateContractor(contractorId: number, prompts: string[]): Promise<{ status: string, results: any[] }> {
@@ -151,33 +166,30 @@ export const api = {
             headers: { ...getAuthHeaders() },
             body: formData
         });
-        
-        if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.detail || 'Đánh giá thất bại');
-        }
-        return res.json();
+        return handleResponse(res);
     },
     
     async getEvaluations(contractorId: number): Promise<EvaluationResult[]> {
         const res = await fetch(`${API_URL}/evaluations/${contractorId}`, {
             headers: { ...getAuthHeaders() }
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     async deleteEvaluation(id: number): Promise<void> {
-        await fetch(`${API_URL}/evaluations/${id}`, {
+        const res = await fetch(`${API_URL}/evaluations/${id}`, {
             method: 'DELETE',
             headers: { ...getAuthHeaders() }
         });
+        if (res.status === 401) return handleResponse(res);
+        if (!res.ok) throw new Error('Failed to delete evaluation');
     },
 
     async getContractorFiles(contractorId: number): Promise<ContractorFile[]> {
         const res = await fetch(`${API_URL}/contractors/${contractorId}/files`, {
             headers: { ...getAuthHeaders() }
         });
-        return res.json();
+        return handleResponse(res);
     },
 
     // Auth & User Management
@@ -203,8 +215,7 @@ export const api = {
         const res = await fetch(`${API_URL}/users/`, {
             headers: { ...getAuthHeaders() }
         });
-        if (!res.ok) throw new Error('Failed to fetch users');
-        return res.json();
+        return handleResponse(res);
     },
 
     async createUser(user: any): Promise<User> {
@@ -213,11 +224,7 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(user)
         });
-        if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.detail || 'Failed to create user');
-        }
-        return res.json();
+        return handleResponse(res);
     },
 
     async updateUser(id: number, user: any): Promise<User> {
@@ -226,8 +233,7 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(user)
         });
-        if (!res.ok) throw new Error('Failed to update user');
-        return res.json();
+        return handleResponse(res);
     },
 
     async deleteUser(id: number): Promise<void> {
@@ -235,6 +241,7 @@ export const api = {
             method: 'DELETE',
             headers: { ...getAuthHeaders() }
         });
+        if (res.status === 401) return handleResponse(res);
         if (!res.ok) throw new Error('Failed to delete user');
     },
 
@@ -244,10 +251,7 @@ export const api = {
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(data)
         });
-        if (!res.ok) {
-             const err = await res.json();
-             throw new Error(err.detail || 'Failed to change password');
-        }
+        await handleResponse(res);
     }
 };
 
